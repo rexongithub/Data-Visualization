@@ -29,16 +29,12 @@ app_ui = ui.page_navbar(
         "Similarity Suggestions",
         ui.layout_sidebar(
             ui.sidebar(
-                ui.input_select(
-                    "feature",
-                    "Select Feature for Similarity:",
-                    ["Composition", "Product Category", "Nutritional Values", "Name Similarity"]
-                ),
-                ui.input_slider("threshold", "Similarity Threshold", 0.5, 1.0, 0.8, step=0.01),
                 ui.input_action_button("run_similarity", "Run Similarity Check")
             ),
-            ui.output_table("similarity_results"),
-            ui.output_plot("similarity_plot")
+            ui.h4("Selected Products for Similarity Check"),
+            ui.output_table("selected_products_table"),
+            ui.output_plot("similarity_plot"),
+            ui.output_text_verbatim("selected_ids_text")
         )
     ),
     ui.nav_panel(
@@ -66,7 +62,7 @@ def server(input, output, session):
         df = pd.read_csv(csv_path)
     else:
         df = pd.DataFrame({
-            "ProductID": [1, 2, 3],
+            "id": [1, 2, 3],
             "Name": ["Apple Juice", "Orange Juice", "Tomato Soup"],
             "Category": ["Beverage", "Beverage", "Soup"],
             "Calories": [45, 50, 80],
@@ -76,22 +72,49 @@ def server(input, output, session):
 
     product_data.set(df)
 
+    def filtered_df():
+        d = product_data.get().copy()
+        choice = input.active_filter()
+        if choice == "1" and "active" in d.columns:
+            d = d[d["active"] == 1]
+        elif choice == "0" and "active" in d.columns:
+            d = d[d["active"] == 0]
+        return d.reset_index(drop=True)  # reindex so .iloc works cleanly
+
+    selected_product_ids = reactive.Value([])
+
+    # Render the table with selection enabled
     @output
     @render.data_frame
     def product_table():
-        df = product_data.get()
-        if df.empty:
-            return pd.DataFrame({"Info": ["No data loaded yet."]})
+        # Use DataTable with multi-row selection
+        return render.DataTable(
+            filtered_df(),
+            selection_mode="rows"  # allow multiple row selection
+        )
+    
 
-        choice = input.active_filter()
-        if choice == "1":
-            df = df[df["active"] == 1]
-        elif choice == "0":
-            df = df[df["active"] == 0]
+    @reactive.Effect
+    def track_selection():
+        sel = product_table.cell_selection()
+        if sel is None:
+            selected_product_ids.set([])
+        else:
+            rows = sel["rows"]
+            if rows:
+                d = filtered_df()
+                ids = d.iloc[list(rows)]["id"].tolist()
+            else:
+                ids = []
+            selected_product_ids.set(ids)
 
-        # return the pandas DataFrame directly
-        return df
 
+
+    # Output text
+    @output
+    @render.text
+    def selected_ids_text():
+        return str(selected_product_ids.get())
 
 
     # --- Similarity Logic (mock) ---
@@ -109,19 +132,30 @@ def server(input, output, session):
     # --- Similarity Table ---
     @output
     @render.table
-    def similarity_results():
-        df = similarity_data.get()
-        return df if not df.empty else pd.DataFrame({"Info": ["Run similarity check to see results."]})
+    def selected_products_table():
+        df = product_data.get()
+        ids = selected_product_ids.get()
+        if df.empty or not ids:
+            return pd.DataFrame({"Info": ["No products selected."]})
+        return df[df["id"].isin(ids)]
 
-    # --- Similarity Plot ---
+
+# --- Similarity Plot ---
     @output
     @render.plot
     def similarity_plot():
         df = similarity_data.get()
         if df.empty:
             return
-        fig = px.bar(df, x="Name", y="Similarity_Score", color="Similar_To", title="Similarity Scores by Product")
+        fig = px.bar(
+            df,
+            x="Name",
+            y="Similarity_Score",
+            color="Similar_To",
+            title="Similarity Scores by Product"
+        )
         return fig
+
 
     # --- Review Table ---
     @output

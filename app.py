@@ -1,4 +1,3 @@
-# app.py
 from shiny import App, ui, render, reactive, run_app
 import pandas as pd
 import plotly.express as px
@@ -18,23 +17,20 @@ app_ui = ui.page_navbar(
                         "1": "Active Only",
                         "0": "Inactive Only",
                     },
-                    selected="all",
+                    selected="0",
                 )
             ),
             ui.output_data_frame("product_table")
-
         )
     ),
     ui.nav_panel(
         "Similarity Suggestions",
         ui.layout_sidebar(
             ui.sidebar(
-                ui.input_action_button("run_similarity", "Run Similarity Check")
+                ui.h4("Similarity Options"),
+                ui.help_text("Select products on the first tab to see them here.")
             ),
-            ui.h4("Selected Products for Similarity Check"),
-            ui.output_table("selected_products_table"),
-            ui.output_plot("similarity_plot"),
-            ui.output_text_verbatim("selected_ids_text")
+            ui.output_ui("selected_product_sections")
         )
     ),
     ui.nav_panel(
@@ -63,11 +59,12 @@ def server(input, output, session):
     else:
         df = pd.DataFrame({
             "id": [1, 2, 3],
-            "Name": ["Apple Juice", "Orange Juice", "Tomato Soup"],
+            "name": ["Apple Juice", "Orange Juice", "Tomato Soup"],
             "Category": ["Beverage", "Beverage", "Soup"],
             "Calories": [45, 50, 80],
             "Protein": [0.2, 0.3, 2.0],
             "Fat": [0.0, 0.1, 3.5],
+            "active": [1, 0, 0],  # Added 'active' column for demo
         })
 
     product_data.set(df)
@@ -79,21 +76,20 @@ def server(input, output, session):
             d = d[d["active"] == 1]
         elif choice == "0" and "active" in d.columns:
             d = d[d["active"] == 0]
-        return d.reset_index(drop=True)  # reindex so .iloc works cleanly
+        return d.reset_index(drop=True)
 
     selected_product_ids = reactive.Value([])
 
-    # Render the table with selection enabled
+    # --- Product Table ---
     @output
     @render.data_frame
     def product_table():
-        # Use DataTable with multi-row selection
         return render.DataTable(
             filtered_df(),
-            selection_mode="rows"  # allow multiple row selection
+            selection_mode="rows"
         )
-    
 
+    # --- Track selection ---
     @reactive.Effect
     def track_selection():
         sel = product_table.cell_selection()
@@ -108,54 +104,49 @@ def server(input, output, session):
                 ids = []
             selected_product_ids.set(ids)
 
-
-
-    # Output text
+    # --- Dynamically generate product sections ---
     @output
-    @render.text
-    def selected_ids_text():
-        return str(selected_product_ids.get())
-
-
-    # --- Similarity Logic (mock) ---
-    @reactive.effect
-    @reactive.event(input.run_similarity)
-    def compute_similarity():
-        df = product_data.get()
-        if df.empty:
-            return
-        sim_df = df.copy()
-        sim_df["Similar_To"] = sim_df["Name"].shift(-1).fillna("None")
-        sim_df["Similarity_Score"] = [0.92, 0.87, 0.55][:len(sim_df)]
-        similarity_data.set(sim_df)
-
-    # --- Similarity Table ---
-    @output
-    @render.table
-    def selected_products_table():
+    @render.ui
+    def selected_product_sections():
         df = product_data.get()
         ids = selected_product_ids.get()
         if df.empty or not ids:
-            return pd.DataFrame({"Info": ["No products selected."]})
-        return df[df["id"].isin(ids)]
+            return ui.card(ui.p("No products selected. Go to 'Data & New Entries' to select some."))
 
+        sections = []
+        for pid in ids:
+            product = df[df["id"] == pid].iloc[0]
 
-# --- Similarity Plot ---
-    @output
-    @render.plot
-    def similarity_plot():
-        df = similarity_data.get()
-        if df.empty:
-            return
-        fig = px.bar(
-            df,
-            x="Name",
-            y="Similarity_Score",
-            color="Similar_To",
-            title="Similarity Scores by Product"
-        )
-        return fig
+            # Check active status (defaults to 0/inactive if column missing)
+            is_active = int(product.get("active", 0)) == 1
 
+            # Conditional styling & content
+            box_style = (
+                "p-3 mb-4 border rounded shadow-sm text-white bg-danger"
+                if is_active
+                else "p-3 mb-4 border rounded shadow-sm bg-light"
+            )
+
+            contents = [
+                ui.h4(f"Product: {product['name']}"),
+                ui.tags.ul(
+                    ui.tags.li(f"ID: {pid}"),
+                    ui.tags.li(f"Category: {product.get('Category', 'N/A')}"),
+                    ui.tags.li(f"Calories: {product.get('Calories', 'N/A')}"),
+                    ui.tags.li(f"Protein: {product.get('Protein', 'N/A')} g"),
+                    ui.tags.li(f"Fat: {product.get('Fat', 'N/A')} g"),
+                    ui.tags.li(f"Active: {'Yes' if is_active else 'No'}"),
+                ),
+            ]
+
+            if not is_active:
+                contents.append(ui.input_action_button(f"run_similarity_{pid}", "Run Similarity Check"))
+            else:
+                contents.append(ui.p("Active products cannot be re-analyzed.", class_="fw-bold"))
+
+            sections.append(ui.card(*contents, class_=box_style))
+
+        return ui.div(*sections)
 
     # --- Review Table ---
     @output
@@ -164,7 +155,8 @@ def server(input, output, session):
         df = similarity_data.get()
         if df.empty:
             return pd.DataFrame({"Info": ["No similarity results yet."]})
-        return df[["Name", "Similar_To", "Similarity_Score"]]
+        return df[["name", "Similar_To", "Similarity_Score"]]
+
 
 # --- RUN APP ---
 app = App(app_ui, server)

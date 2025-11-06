@@ -2,6 +2,7 @@ from shiny import App, ui, render, reactive, run_app
 import pandas as pd
 import plotly.express as px
 import os
+from test import find_similar_products
 
 # --- UI ---
 app_ui = ui.page_navbar(
@@ -30,7 +31,11 @@ app_ui = ui.page_navbar(
                 ui.h4("Similarity Options"),
                 ui.help_text("Select products on the first tab to see them here.")
             ),
-            ui.output_ui("selected_product_sections")
+            ui.output_ui("selected_product_sections"),
+            ui.hr(),
+            ui.h4("Similarity Results"),
+            ui.output_table("similarity_results")
+
         )
     ),
     ui.nav_panel(
@@ -56,13 +61,14 @@ def server(input, output, session):
 
     if os.path.exists(csv_path):
         df = pd.read_csv(csv_path)
+        df = df[df["deleted"].isna()]
     else:
         df = pd.DataFrame({
             "id": [1, 2, 3],
             "name": ["Apple Juice", "Orange Juice", "Tomato Soup"],
             "Category": ["Beverage", "Beverage", "Soup"],
             "Calories": [45, 50, 80],
-            "Protein": [0.2, 0.3, 2.0],
+            "protein": [0.2, 0.3, 2.0],
             "Fat": [0.0, 0.1, 3.5],
             "active": [1, 0, 0],  # Added 'active' column for demo
         })
@@ -131,11 +137,10 @@ def server(input, output, session):
                 ui.h4(f"Product: {product['name']}"),
                 ui.tags.ul(
                     ui.tags.li(f"ID: {pid}"),
-                    ui.tags.li(f"Category: {product.get('Category', 'N/A')}"),
-                    ui.tags.li(f"Calories: {product.get('Calories', 'N/A')}"),
-                    ui.tags.li(f"Protein: {product.get('Protein', 'N/A')} g"),
-                    ui.tags.li(f"Fat: {product.get('Fat', 'N/A')} g"),
-                    ui.tags.li(f"Active: {'Yes' if is_active else 'No'}"),
+                    ui.tags.li(f"Category: {product.get('categories', 'N/A')}"),
+                    ui.tags.li(f"Energy: {product.get('energy', 'N/A')}"),
+                    ui.tags.li(f"Protein: {product.get('protein', 'N/A')} g"),
+                    ui.tags.li(f"Fat: {product.get('fat', 'N/A')} g"),
                 ),
             ]
 
@@ -156,6 +161,44 @@ def server(input, output, session):
         if df.empty:
             return pd.DataFrame({"Info": ["No similarity results yet."]})
         return df[["name", "Similar_To", "Similarity_Score"]]
+    
+    # --- Handle dynamic similarity buttons ---
+    @reactive.Effect
+    def listen_similarity_buttons():
+        ids = selected_product_ids.get()  # which products are shown
+        for pid in ids:
+            btn_id = f"run_similarity_{pid}"
+
+            # check if this input exists
+            if btn_id in input:
+
+                # create an isolated effect for THIS button
+                @reactive.Effect
+                def _button_handler(pid=pid, btn_id=btn_id):
+                    if input[btn_id]():  # button clicked
+                        run_similarity(pid)
+
+    def run_similarity(pid):
+        df = product_data.get()
+        
+        # result = list of active product IDs
+        result_ids = find_similar_products(df, pid, top_n=10)
+
+        # extract those rows from the main dataframe
+        matched_rows = df[df["id"].isin(result_ids)][
+            ["id", "name", "brands", "barcode", "categories", "energy", "protein", "fat"]
+        ]
+
+        # store results
+        similarity_data.set(matched_rows)
+
+    @output
+    @render.table
+    def similarity_results():
+        df = similarity_data.get()
+        if df.empty:
+            return pd.DataFrame({"Info": ["Run a similarity check to see matches here."]})
+        return df
 
 
 # --- RUN APP ---

@@ -1,0 +1,3 @@
+- Search Bar First Page
+- UI Overhaul
+- Weights Overhaul

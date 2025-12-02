@@ -1,5 +1,6 @@
 from shiny import App, ui, render, reactive, run_app
 import pandas as pd
+import duckdb
 import os
 from test import find_similar_products
 
@@ -15,7 +16,8 @@ app_ui = ui.page_navbar(
                 ui.input_radio_buttons(
                     "active_filter",
                     "Show Products:",
-                    choices={"all": "All", "1": "Active Only", "0": "Inactive Only"},
+                    choices={"all": "All", "1": "Active Only",
+                             "0": "Inactive Only"},
                     selected="0",
                 )
             ),
@@ -51,9 +53,14 @@ app_ui = ui.page_navbar(
 def server(input, output, session):
 
     # ----------------------
+    # Initialize DuckDB Connection
+    # ----------------------
+    # Create an in-memory database connection
+    con = duckdb.connect(database=':memory:')
+
+    # ----------------------
     # Reactive Values
     # ----------------------
-    product_data = reactive.Value(pd.DataFrame())
     similarity_results = reactive.Value({})
     selected_product_ids = reactive.Value([])
 
@@ -61,36 +68,48 @@ def server(input, output, session):
     created_handlers = set()
 
     # ----------------------
-    # Load CSV
+    # Load CSV into DuckDB
     # ----------------------
     csv_path = os.path.join(os.path.dirname(__file__), "view_food_clean.csv")
     if os.path.exists(csv_path):
-        df = pd.read_csv(csv_path)
-        df = df[df["deleted"].isna()]
+        # Load CSV directly into DuckDB
+        con.execute(f"""
+            CREATE TABLE products AS 
+            SELECT * FROM read_csv_auto('{csv_path}')
+            WHERE deleted IS NULL
+        """)
     else:
-        df = pd.DataFrame({
-            "id": [1, 2, 3],
-            "name": ["Apple Juice", "Orange Juice", "Tomato Soup"],
-            "categories": ["Beverage", "Beverage", "Soup"],
-            "energy": [45, 50, 80],
-            "protein": [0.2, 0.3, 2.0],
-            "fat": [0.0, 0.1, 3.5],
-            "active": [1, 0, 0],
-        })
+        # Create sample data table
+        con.execute("""
+            CREATE TABLE products AS 
+            SELECT * FROM (VALUES
+                (1, 'Apple Juice', 'Beverage', 45, 0.2, 0.0, 1),
+                (2, 'Orange Juice', 'Beverage', 50, 0.3, 0.1, 0),
+                (3, 'Tomato Soup', 'Soup', 80, 2.0, 3.5, 0)
+            ) AS t(id, name, categories, energy, protein, fat, active)
+        """)
 
-    product_data.set(df)
+    # ----------------------
+    # Helper function to get all products as DataFrame
+    # ----------------------
+    def get_all_products():
+        """Fetch all products from DuckDB as a pandas DataFrame"""
+        return con.execute("SELECT * FROM products").df()
 
     # ----------------------
     # Filtered DataFrame
     # ----------------------
     def filtered_df():
-        df = product_data.get().copy()
         f = input.active_filter()
+
         if f == "1":
-            df = df[df["active"] == 1]
+            query = "SELECT * FROM products WHERE active = 1"
         elif f == "0":
-            df = df[df["active"] == 0]
-        return df.reset_index(drop=True)
+            query = "SELECT * FROM products WHERE active = 0"
+        else:  # "all"
+            query = "SELECT * FROM products"
+
+        return con.execute(query).df().reset_index(drop=True)
 
     # ----------------------
     # Product Table Output
@@ -116,11 +135,22 @@ def server(input, output, session):
     # Compute Similarity
     # ----------------------
     def compute_similarity(pid):
-        df = product_data.get()
+        # Get all products for similarity computation
+        df = get_all_products()
         matches = find_similar_products(df, pid, top_n=10)
-        res = df[df["id"].isin(matches)][[
-            "id", "name", "categories", "energy", "protein", "fat"
-        ]]
+
+        # Query DuckDB for the matched products
+        if matches:
+            placeholders = ','.join('?' * len(matches))
+            query = f"""
+                SELECT id, name, categories, energy, protein, fat 
+                FROM products 
+                WHERE id IN ({placeholders})
+            """
+            res = con.execute(query, matches).df()
+        else:
+            res = pd.DataFrame(
+                columns=["id", "name", "categories", "energy", "protein", "fat"])
 
         store = similarity_results.get().copy()
         store[pid] = res
@@ -151,7 +181,6 @@ def server(input, output, session):
     @output
     @render.ui
     def similarity_section():
-        df = product_data.get()
         ids = selected_product_ids.get()
 
         if not ids:
@@ -160,7 +189,9 @@ def server(input, output, session):
         cards = []
 
         for pid in ids:
-            row = df[df["id"] == pid].iloc[0]
+            # Get product details from DuckDB
+            row = con.execute(
+                "SELECT * FROM products WHERE id = ?", [pid]).df().iloc[0]
             table_id = f"similarity_table_{pid}"
 
             @output(id=table_id)
@@ -175,12 +206,14 @@ def server(input, output, session):
                 ui.card(
                     ui.h4(f"{row['name']} (ID: {pid})"),
                     ui.tags.ul(
-                        ui.tags.li(f"Category: {row.get('categories', 'N/A')}"),
+                        ui.tags.li(
+                            f"Category: {row.get('categories', 'N/A')}"),
                         ui.tags.li(f"Energy: {row.get('energy', 'N/A')}"),
                         ui.tags.li(f"Protein: {row.get('protein', 'N/A')} g"),
                         ui.tags.li(f"Fat: {row.get('fat', 'N/A')} g"),
                     ),
-                    ui.input_action_button(f"run_similarity_{pid}", "Run Similarity"),
+                    ui.input_action_button(
+                        f"run_similarity_{pid}", "Run Similarity"),
                     ui.hr(),
                     ui.h5("Similarity Results"),
                     ui.output_table(table_id),
@@ -189,6 +222,14 @@ def server(input, output, session):
             )
 
         return ui.div(*cards)
+
+    # ----------------------
+    # Cleanup on session end
+    # ----------------------
+    @reactive.Effect
+    def _cleanup():
+        # This will be called when the session ends
+        session.on_ended(lambda: con.close())
 
 
 # ================================

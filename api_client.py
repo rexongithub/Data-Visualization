@@ -67,9 +67,10 @@ class SimilarityAPIClient:
                 result_df = pd.DataFrame([
                     {
                         'Rank': p['rank'],
-                        'ID': p['id'],
                         'Name': p['name'],
                         'Brand': p['brand'],
+                        'Barcode': p.get('barcode', 'N/A'),
+                        'Active': 'Yes' if p.get('active', 0) == 1 else 'No',
                         'Score': f"{p['similarity_score']:.4f}",
                         'Energy': p['nutrition']['energy'],
                         'Protein': p['nutrition']['protein'],
@@ -77,6 +78,9 @@ class SimilarityAPIClient:
                     }
                     for p in similar_prods
                 ])
+                
+                # Store the IDs separately for later use
+                result_df['_id'] = [p['id'] for p in similar_prods]
                 
                 print(f"✅ Found {len(result_df)} similar products for ID {product_id}")
                 print(f"   Computation time: {data['computation_time_ms']} ms")

@@ -20,7 +20,7 @@ print("✅ Model loaded")
 
 # Load and preprocess data ONCE
 CSV_PATH = os.path.join(os.path.dirname(__file__), "view_food_clean.csv")
-df = pd.read_csv(CSV_PATH)
+df = pd.read_csv(CSV_PATH, low_memory=False)
 
 # Convert active to numeric
 df["active"] = pd.to_numeric(df["active"], errors="coerce")
@@ -50,20 +50,20 @@ def clean_text(text):
 
 
 # ============================================================
-# Precompute active product embeddings
+# Precompute ALL product embeddings (both active and inactive)
 # ============================================================
-print("🔄 Precomputing embeddings for active products...")
-ACTIVE_DF = df[df["active"] == 1].copy()
-ACTIVE_DF["text_combined"] = (
-    ACTIVE_DF["name_search"].apply(clean_text) + " " +
-    ACTIVE_DF["brands_search"].apply(clean_text)
+print("🔄 Precomputing embeddings for all products...")
+ALL_DF = df.copy()
+ALL_DF["text_combined"] = (
+    ALL_DF["name_search"].apply(clean_text) + " " +
+    ALL_DF["brands_search"].apply(clean_text)
 )
-ACTIVE_EMBEDDINGS = MODEL.encode(
-    ACTIVE_DF["text_combined"].tolist(),
+ALL_EMBEDDINGS = MODEL.encode(
+    ALL_DF["text_combined"].tolist(),
     convert_to_numpy=True,
     show_progress_bar=True
 )
-print(f"✅ Embeddings computed for {len(ACTIVE_DF)} active products")
+print(f"✅ Embeddings computed for {len(ALL_DF)} products")
 print("=" * 60)
 print("🚀 API ready to accept requests!")
 print("=" * 60)
@@ -80,7 +80,8 @@ def index():
         "service": "Food Product Similarity API",
         "status": "running",
         "total_products": len(df),
-        "active_products": len(ACTIVE_DF),
+        "active_products": len(df[df["active"] == 1]),
+        "inactive_products": len(df[df["active"] == 0]),
         "model": "all-MiniLM-L6-v2",
         "endpoints": {
             "/": "Health check (this page)",
@@ -94,15 +95,16 @@ def index():
 @app.route("/similar", methods=["POST"])
 def find_similar():
     """
-    Find similar products to a non-active product.
+    Find similar products to a given product.
+    Now returns both active and inactive products (excluding the query product itself).
 
     Expects JSON like:
     {
       "product_id": 26585,
-      "top_n": 10,
+      "top_n": 20,
       "weights": {
-        "text": 0.7,
-        "nutrition": 0.2,
+        "text": 0.8,
+        "nutrition": 0.0,
         "brand": 0.1,
         "barcode": 0.1
       }
@@ -129,10 +131,10 @@ def find_similar():
         return jsonify({"error": "Missing or invalid 'product_id'"}), 400
 
     # Optional parameters with defaults
-    top_n = int(data.get("top_n", 10))
+    top_n = int(data.get("top_n", 20))
     weights = data.get("weights", {})
-    w_text = float(weights.get("text", 0.7))
-    w_nutrition = float(weights.get("nutrition", 0.2))
+    w_text = float(weights.get("text", 0.8))
+    w_nutrition = float(weights.get("nutrition", 0.0))
     w_brand = float(weights.get("brand", 0.1))
     w_barcode = float(weights.get("barcode", 0.1))
 
@@ -143,36 +145,40 @@ def find_similar():
             "error": f"Weights must sum to 1.0, got {total_weight}"
         }), 400
 
-    # Get the non-active product
-    rowset = df[(df["active"] == 0) & (df["id"] == product_id)]
+    # Get the query product
+    rowset = df[df["id"] == product_id]
     if rowset.empty:
         return jsonify({
-            "error": f"No non-active product found with ID {product_id}"
+            "error": f"No product found with ID {product_id}"
         }), 404
 
-    non_active_row = rowset.iloc[0]
+    query_row = rowset.iloc[0]
+
+    # Create comparison dataframe (all products except the query product)
+    COMPARISON_DF = ALL_DF[ALL_DF["id"] != product_id].copy()
+    comparison_embeddings = ALL_EMBEDDINGS[ALL_DF["id"] != product_id]
 
     # ========================================
     # 1. Text Similarity
     # ========================================
     text = (
-        clean_text(str(non_active_row.get("name_search", ""))) + " " +
-        clean_text(str(non_active_row.get("brands_search", "")))
+        clean_text(str(query_row.get("name_search", ""))) + " " +
+        clean_text(str(query_row.get("brands_search", "")))
     )
     text_emb = MODEL.encode([text], convert_to_numpy=True)
-    text_sim = cosine_similarity(text_emb, ACTIVE_EMBEDDINGS).flatten()
+    text_sim = cosine_similarity(text_emb, comparison_embeddings).flatten()
 
     # ========================================
     # 2. Nutrition Similarity
     # ========================================
-    nutrition_sim = np.zeros(len(ACTIVE_DF))
-    nutrition_values = non_active_row[NUTRITION_COLS].values.astype(float)
+    nutrition_sim = np.zeros(len(COMPARISON_DF))
+    nutrition_values = query_row[NUTRITION_COLS].values.astype(float)
 
     if not np.all(np.isnan(nutrition_values)):
         valid_cols = ~np.isnan(nutrition_values)
         for i, col in enumerate(NUTRITION_COLS):
             if valid_cols[i]:
-                diff = ACTIVE_DF[col].fillna(0).values - nutrition_values[i]
+                diff = COMPARISON_DF[col].fillna(0).values - nutrition_values[i]
                 nutrition_sim += -np.abs(diff)
         nutrition_sim /= np.sum(valid_cols)
         # Normalize to 0-1 range (simple min-max)
@@ -184,18 +190,18 @@ def find_similar():
     # 3. Brand Match
     # ========================================
     brand_sim = np.array([
-        1.0 if clean_text(non_active_row.get("brands_search", "")) ==
+        1.0 if clean_text(query_row.get("brands_search", "")) ==
         clean_text(str(b)) and b else 0.0
-        for b in ACTIVE_DF["brands_search"]
+        for b in COMPARISON_DF["brands_search"]
     ])
 
     # ========================================
     # 4. Barcode Match
     # ========================================
     barcode_sim = np.array([
-        1.0 if str(non_active_row.get("barcode", "")
+        1.0 if str(query_row.get("barcode", "")
                    ) == str(bc) and bc else 0.0
-        for bc in ACTIVE_DF["barcode"]
+        for bc in COMPARISON_DF["barcode"]
     ])
 
     # ========================================
@@ -210,19 +216,20 @@ def find_similar():
 
     # Get top N
     top_idx = combined_score.argsort()[::-1][:top_n]
-    result_ids = ACTIVE_DF.iloc[top_idx]["id"].tolist()
+    result_ids = COMPARISON_DF.iloc[top_idx]["id"].tolist()
     scores = combined_score[top_idx].tolist()
 
     # Build detailed results
     similar_products = []
     for idx, (prod_id, score) in enumerate(zip(result_ids, scores)):
-        prod_row = ACTIVE_DF[ACTIVE_DF["id"] == prod_id].iloc[0]
+        prod_row = COMPARISON_DF[COMPARISON_DF["id"] == prod_id].iloc[0]
         similar_products.append({
             "rank": idx + 1,
             "id": int(prod_id),
             "name": str(prod_row.get("name_search", "")),
             "brand": str(prod_row.get("brands_search", "")),
             "barcode": str(prod_row.get("barcode", "")),
+            "active": int(prod_row["active"]) if pd.notna(prod_row["active"]) else 0,
             "similarity_score": float(score),
             "nutrition": {
                 col: float(prod_row[col]) if pd.notna(prod_row[col]) else None
@@ -236,12 +243,13 @@ def find_similar():
     return jsonify({
         "query_product": {
             "id": int(product_id),
-            "name": str(non_active_row.get("name_search", "")),
-            "brand": str(non_active_row.get("brands_search", "")),
-            "barcode": str(non_active_row.get("barcode", "")),
+            "name": str(query_row.get("name_search", "")),
+            "brand": str(query_row.get("brands_search", "")),
+            "barcode": str(query_row.get("barcode", "")),
+            "active": int(query_row["active"]) if pd.notna(query_row["active"]) else 0,
             "nutrition": {
-                col: float(non_active_row[col]) if pd.notna(
-                    non_active_row[col]) else None
+                col: float(query_row[col]) if pd.notna(
+                    query_row[col]) else None
                 for col in NUTRITION_COLS
             }
         },
@@ -287,8 +295,8 @@ def get_stats():
     """Get dataset statistics"""
     return jsonify({
         "total_products": len(df),
-        "active_products": len(ACTIVE_DF),
-        "inactive_products": len(df[df["active"] == 0]),
+        "active_products": int((df["active"] == 1).sum()),
+        "inactive_products": int((df["active"] == 0).sum()),
         "products_with_barcode": int(df["barcode"].notna().sum()),
         "products_with_brand": int(df["brands_search"].notna().sum()),
         "nutrition_stats": {

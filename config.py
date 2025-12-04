@@ -15,8 +15,8 @@ APP_PORT = 8000
 
 # UI Configuration
 DEFAULT_WEIGHTS = {
-    "text": 0.7,
-    "nutrition": 0.2,
+    "text": 0.8,
+    "nutrition": 0.0,
     "brand": 0.1,
     "barcode": 0.1
 }
@@ -28,5 +28,5 @@ WEIGHT_SLIDER_CONFIG = {
 }
 
 # Similarity Configuration
-TOP_N_RESULTS = 10
+TOP_N_RESULTS = 20
 API_TIMEOUT = 30

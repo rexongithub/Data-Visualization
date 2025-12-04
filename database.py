@@ -67,23 +67,41 @@ class DatabaseManager:
         """)
         print("Created empty products table due to error")
     
-    def get_filtered_products(self, active_filter):
+    def get_filtered_products(self, active_filter, search_term="", columns=None):
         """
-        Get products filtered by active status
+        Get products filtered by active status and search term
         
         Args:
             active_filter: "all", "1" (active), or "0" (inactive)
+            search_term: Optional search term for name or brand
+            columns: Optional list of columns to select
         
         Returns:
             pandas DataFrame with filtered products
         """
         try:
-            if active_filter == "1":
-                query = "SELECT * FROM products WHERE active = 1"
-            elif active_filter == "0":
-                query = "SELECT * FROM products WHERE active = 0"
+            # Build column selection
+            if columns:
+                col_str = ", ".join(columns)
             else:
-                query = "SELECT * FROM products"
+                col_str = "*"
+            
+            # Build WHERE clause
+            conditions = []
+            
+            if active_filter == "1":
+                conditions.append("active = 1")
+            elif active_filter == "0":
+                conditions.append("active = 0")
+            
+            if search_term:
+                conditions.append(
+                    f"(LOWER(name) LIKE '%{search_term.lower()}%' OR "
+                    f"LOWER(brands) LIKE '%{search_term.lower()}%')"
+                )
+            
+            where_clause = " AND ".join(conditions) if conditions else "1=1"
+            query = f"SELECT {col_str} FROM products WHERE {where_clause}"
             
             return self.con.execute(query).df().reset_index(drop=True)
         except Exception as e:
@@ -101,6 +119,12 @@ class DatabaseManager:
             pandas Series with product data
         """
         try:
+            # Convert numpy int64 to Python int if necessary
+            if hasattr(product_id, 'item'):
+                product_id = product_id.item()
+            else:
+                product_id = int(product_id)
+            
             result = self.con.execute(
                 "SELECT * FROM products WHERE id = ?", 
                 [product_id]

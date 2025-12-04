@@ -2,103 +2,132 @@
 UI components for the Food Product Similarity Dashboard
 """
 from shiny import ui
-from config import DEFAULT_WEIGHTS, WEIGHT_SLIDER_CONFIG
+from config import DEFAULT_WEIGHTS
 
 
 def create_app_ui():
-    """Create the main application UI"""
-    return ui.page_navbar(
-        create_data_panel(),
-        create_similarity_panel(),
-        create_review_panel(),
+    """Create the main application UI with side navigation"""
+    return ui.page_sidebar(
+        ui.sidebar(
+            ui.h4("Navigation"),
+            ui.input_action_button("nav_data", "Data & New Entries", class_="btn btn-primary w-100 mb-2"),
+            ui.input_action_button("nav_similarity", "Similarity Suggestions", class_="btn btn-primary w-100 mb-2"),
+            ui.input_action_button("nav_review", "Review & Validation", class_="btn btn-primary w-100 mb-2"),
+            width="250px",
+            bg="#f8f9fa"
+        ),
+        ui.output_ui("main_content"),
+        ui.tags.style("""
+            /* Force fixed table layout for all data grids */
+            .shiny-data-grid table {
+                table-layout: fixed !important;
+                width: 100% !important;
+            }
+            
+            /* Truncate all cells with ellipsis */
+            .shiny-data-grid td,
+            .shiny-data-grid th {
+                overflow: hidden !important;
+                text-overflow: ellipsis !important;
+                white-space: nowrap !important;
+                max-width: 0 !important;
+            }
+            
+            /* Column widths for main data tables (7 columns: id, name, brands, barcode, energy, protein, fat) */
+            .shiny-data-grid td:nth-child(1),
+            .shiny-data-grid th:nth-child(1) {
+                width: 60px !important;
+                max-width: 60px !important;
+            }
+            
+            .shiny-data-grid td:nth-child(2),
+            .shiny-data-grid th:nth-child(2) {
+                width: 200px !important;
+                max-width: 200px !important;
+            }
+            
+            .shiny-data-grid td:nth-child(3),
+            .shiny-data-grid th:nth-child(3) {
+                width: 130px !important;
+                max-width: 130px !important;
+            }
+            
+            .shiny-data-grid td:nth-child(4),
+            .shiny-data-grid th:nth-child(4) {
+                width: 120px !important;
+                max-width: 120px !important;
+            }
+            
+            .shiny-data-grid td:nth-child(5),
+            .shiny-data-grid th:nth-child(5) {
+                width: 70px !important;
+                max-width: 70px !important;
+            }
+            
+            .shiny-data-grid td:nth-child(6),
+            .shiny-data-grid th:nth-child(6) {
+                width: 70px !important;
+                max-width: 70px !important;
+            }
+            
+            .shiny-data-grid td:nth-child(7),
+            .shiny-data-grid th:nth-child(7) {
+                width: 70px !important;
+                max-width: 70px !important;
+            }
+            
+            .shiny-data-grid td:nth-child(8),
+            .shiny-data-grid th:nth-child(8) {
+                width: 70px !important;
+                max-width: 70px !important;
+            }
+            
+            .shiny-data-grid td:nth-child(9),
+            .shiny-data-grid th:nth-child(9) {
+                width: 70px !important;
+                max-width: 70px !important;
+            }
+        """),
         title="Food Product Similarity Dashboard",
     )
 
 
-def create_data_panel():
-    """Create the Data & New Entries panel"""
-    return ui.nav_panel(
-        "Data & New Entries",
-        ui.layout_sidebar(
-            ui.sidebar(
-                ui.input_radio_buttons(
-                    "active_filter",
-                    "Show Products:",
-                    choices={"all": "All", "1": "Active Only", "0": "Inactive Only"},
-                    selected="0",
-                )
-            ),
-            ui.output_data_frame("product_table"),
-        ),
-    )
-
-
-def create_similarity_panel():
-    """Create the Similarity Suggestions panel"""
-    return ui.nav_panel(
-        "Similarity Suggestions",
-        ui.layout_sidebar(
-            ui.sidebar(
-                ui.h4("Similarity Options"),
-                create_weight_sliders(),
-                ui.output_text("weight_sum_warning")
-            ),
-            ui.output_ui("similarity_section"),
-        ),
-    )
-
-
-def create_weight_sliders():
-    """Create weight slider inputs"""
-    slider_config = WEIGHT_SLIDER_CONFIG
-    
+def create_data_panel_content():
+    """Create the Data & New Entries panel content"""
     return ui.div(
-        ui.input_slider(
-            "weight_text",
-            "Text Weight:",
-            min=slider_config["min"],
-            max=slider_config["max"],
-            value=DEFAULT_WEIGHTS["text"],
-            step=slider_config["step"]
-        ),
-        ui.input_slider(
-            "weight_nutrition",
-            "Nutrition Weight:",
-            min=slider_config["min"],
-            max=slider_config["max"],
-            value=DEFAULT_WEIGHTS["nutrition"],
-            step=slider_config["step"]
-        ),
-        ui.input_slider(
-            "weight_brand",
-            "Brand Weight:",
-            min=slider_config["min"],
-            max=slider_config["max"],
-            value=DEFAULT_WEIGHTS["brand"],
-            step=slider_config["step"]
-        ),
-        ui.input_slider(
-            "weight_barcode",
-            "Barcode Weight:",
-            min=slider_config["min"],
-            max=slider_config["max"],
-            value=DEFAULT_WEIGHTS["barcode"],
-            step=slider_config["step"]
-        ),
+        ui.h2("Data & New Entries"),
+        ui.hr(),
+        
+        # Active Products Section
+        ui.h4("Active Products"),
+        ui.input_text("search_active", "", placeholder="Search by name or brands..."),
+        ui.output_data_frame("active_products_table"),
+        
+        ui.br(),
+        ui.br(),
+        
+        # Inactive Products Section
+        ui.h4("Inactive Products"),
+        ui.input_text("search_inactive", "", placeholder="Search by name or brands..."),
+        ui.output_data_frame("inactive_products_table"),
     )
 
 
-def create_review_panel():
-    """Create the Review & Validation panel"""
-    return ui.nav_panel(
-        "Review & Validation",
-        ui.layout_sidebar(
-            ui.sidebar(
-                ui.input_action_button("approve", "Approve Match"),
-                ui.input_action_button("reject", "Reject / Create New Entry"),
-            ),
-            ui.output_table("review_table"),
-        ),
+def create_similarity_panel_content():
+    """Create the Similarity Suggestions panel content"""
+    return ui.div(
+        ui.h2("Similarity Suggestions"),
+        ui.hr(),
+        ui.output_ui("similarity_section"),
+    )
+
+
+def create_review_panel_content():
+    """Create the Review & Validation panel content (WIP)"""
+    return ui.div(
+        ui.h2("Review & Validation"),
+        ui.hr(),
+        ui.p("This section is still under development.", class_="text-muted"),
     )
 
 
@@ -118,7 +147,9 @@ def create_product_card(product_id, product_data):
     return ui.card(
         ui.h4(f"{product_data['name']} (ID: {product_id})"),
         ui.tags.ul(
-            ui.tags.li(f"Category: {product_data.get('categories', 'N/A')}"),
+            ui.tags.li(f"Brand: {product_data.get('brands', 'N/A')}"),
+            ui.tags.li(f"Barcode: {product_data.get('barcode', 'N/A')}"),
+            ui.tags.li(f"Active: {'Yes' if product_data.get('active', 0) == 1 else 'No'}"),
             ui.tags.li(f"Energy: {product_data.get('energy', 'N/A')}"),
             ui.tags.li(f"Protein: {product_data.get('protein', 'N/A')} g"),
             ui.tags.li(f"Fat: {product_data.get('fat', 'N/A')} g"),
@@ -130,7 +161,7 @@ def create_product_card(product_id, product_data):
         ),
         ui.hr(),
         ui.h5("Similarity Results"),
-        ui.output_table(table_id),
+        ui.output_data_frame(table_id),
         class_="mb-4 p-3 border rounded shadow-sm",
     )
 
@@ -157,4 +188,4 @@ def create_api_warning_card(api_url):
 
 def create_no_selection_card():
     """Create a card for when no products are selected"""
-    return ui.card("No products selected. Select rows from the Data & New Entries tab.")
+    return ui.card("No product selected. Select a row from the Data & New Entries tab.")

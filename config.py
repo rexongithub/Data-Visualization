@@ -15,10 +15,10 @@ APP_PORT = 8000
 
 # UI Configuration
 DEFAULT_WEIGHTS = {
-    "text": 0.8,
-    "nutrition": 0.0,
-    "brand": 0.1,
-    "barcode": 0.1
+    "text": 0.9,
+    "nutrition": 0.03,
+    "brand": 0.07,
+    "barcode": 0.0
 }
 
 WEIGHT_SLIDER_CONFIG = {
@@ -30,3 +30,44 @@ WEIGHT_SLIDER_CONFIG = {
 # Similarity Configuration
 TOP_N_RESULTS = 20
 API_TIMEOUT = 30
+
+# Editor Configuration - fields that can be edited
+EDITABLE_FIELDS = [
+    "name_search",
+    "brands_search",
+    "energy",
+    "protein",
+    "fat",
+    "saturated_fatty_acid",
+    "carbohydrates",
+    "sugar",
+    "salt"
+]
+
+# Fields to display in comparison view
+COMPARISON_FIELDS = [
+    "id",
+    "name_search",
+    "brands_search",
+    "barcode",
+    "active",
+    "energy",
+    "protein",
+    "fat",
+    "saturated_fatty_acid",
+    "carbohydrates",
+    "sugar",
+    "salt",
+    "categories"
+]
+
+# Nutrition fields (numeric)
+NUTRITION_FIELDS = [
+    "energy",
+    "protein",
+    "fat",
+    "saturated_fatty_acid",
+    "carbohydrates",
+    "sugar",
+    "salt"
+]

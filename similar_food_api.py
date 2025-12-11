@@ -178,7 +178,8 @@ def find_similar():
         valid_cols = ~np.isnan(nutrition_values)
         for i, col in enumerate(NUTRITION_COLS):
             if valid_cols[i]:
-                diff = COMPARISON_DF[col].fillna(0).values - nutrition_values[i]
+                diff = COMPARISON_DF[col].fillna(
+                    0).values - nutrition_values[i]
                 nutrition_sim += -np.abs(diff)
         nutrition_sim /= np.sum(valid_cols)
         # Normalize to 0-1 range (simple min-max)

@@ -1,6 +1,0 @@
-- Moeten we gewoon tabellen laten zien op de paginas, of liever een echt dashboard met visuals etc
-- Moeten we werken met weights of is dit te moeilijk => of automatisch aanpassen
-- Meerdere items kunnen selecteren
-- Hoe gaan we new entries aanpakken
-- Exact zelfde producten verwijderen of bijna dezelfde producten
-- Engels of Nederlands

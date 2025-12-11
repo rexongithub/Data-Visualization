@@ -9,15 +9,24 @@ def create_app_ui():
     """Create the main application UI with side navigation"""
     return ui.page_sidebar(
         ui.sidebar(
-            ui.h4("Navigation"),
-            ui.input_action_button("nav_data", "Data & New Entries", class_="btn btn-primary w-100 mb-2"),
-            ui.input_action_button("nav_similarity", "Similarity Suggestions", class_="btn btn-primary w-100 mb-2"),
-            ui.input_action_button("nav_review", "Review & Validation", class_="btn btn-primary w-100 mb-2"),
-            width="250px",
-            bg="#f8f9fa"
+            ui.input_action_button("nav_data", "Data", class_="btn btn-primary w-100 mb-0"),
+            ui.input_action_button("nav_similarity", "Similarity", class_="btn btn-primary w-100 mb-0"),
+            ui.input_action_button("nav_review", "Review", class_="btn btn-primary w-100 mb-0"),
+            width="200px",
+            bg="#f8f9fa",
+            position='left',
+            open= "always"
         ),
         ui.output_ui("main_content"),
         ui.tags.style("""
+                      
+            .sidebar {
+                resize: none !important;
+                min-width: 200px !important;
+                max-width: 200px !important;
+                width: 200px !important;
+            }
+
             /* Force fixed table layout for all data grids */
             .shiny-data-grid table {
                 table-layout: fixed !important;
@@ -88,7 +97,6 @@ def create_app_ui():
                 max-width: 70px !important;
             }
         """),
-        title="Food Product Similarity Dashboard",
     )
 
 

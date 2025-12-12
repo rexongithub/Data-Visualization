@@ -12,12 +12,9 @@ def create_app_ui():
             ui.input_action_button(
                 "nav_data", "Data & New Entries", class_="btn btn-primary w-100 mb-1"),
             ui.input_action_button(
-                "nav_similarity", "Similarity Suggestions", class_="btn btn-primary w-100 mb-1"),
+                "nav_similarity", "Similarity Suggestions", class_="btn btn-primary w-100 mb-1", disabled=True),
             ui.input_action_button(
-                "nav_review", "Review & Validation", class_="btn btn-primary w-100 mb-1"),
-            ui.input_action_button(
-                "nav_editor", "Product Editor", class_="btn btn-secondary w-100 mb-1"),
-            ui.hr(),
+                "nav_editor", "Product Editor", class_="btn btn-secondary w-100 mb-1", disabled=True),
             ui.output_ui("marked_products_indicator"),
             width="250px",
             bg="#f8f9fa"
@@ -242,7 +239,7 @@ def create_similarity_panel_content():
 def create_review_panel_content():
     """Create the Review & Validation panel content"""
     return ui.div(
-        ui.h2("✓ Review & Validation"),
+        ui.h2("Review & Validation"),
         ui.hr(),
         ui.output_ui("review_section"),
     )
@@ -251,7 +248,7 @@ def create_review_panel_content():
 def create_editor_panel_content():
     """Create the Product Editor panel content"""
     return ui.div(
-        ui.h2("✏️ Product Editor"),
+        ui.h2("Product Editor"),
         ui.hr(),
         ui.output_ui("editor_section"),
     )
@@ -397,7 +394,7 @@ def create_comparison_panel(original_product, similar_product, comparison_fields
     else:
         action_button = ui.input_action_button(
             f"mark_btn_{similar_id}",
-            "✓ Mark for Review & Validation",
+            "Mark for Review",
             class_="btn btn-primary mt-3"
         )
         status_badge = ""
@@ -405,9 +402,6 @@ def create_comparison_panel(original_product, similar_product, comparison_fields
     return ui.div(
         ui.div(
             ui.h5("📊 Product Comparison"),
-            ui.span("ACTIVE" if is_active else "INACTIVE",
-                    class_="badge bg-success" if is_active else "badge bg-secondary"),
-            status_badge,
             class_="d-flex align-items-center gap-2 mb-3"
         ),
         ui.tags.table(
@@ -543,11 +537,6 @@ def create_editor_form(product_data, editable_fields):
                 "save_product_changes",
                 "💾 Save Changes & Activate",
                 class_="btn btn-success btn-lg me-2"
-            ),
-            ui.input_action_button(
-                "cancel_editor",
-                "Cancel",
-                class_="btn btn-secondary btn-lg"
             ),
         ),
         class_="p-4"

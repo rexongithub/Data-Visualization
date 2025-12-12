@@ -71,6 +71,34 @@ def create_server(input, output, session):
     # ----------------------
 
     @reactive.Effect
+    def _toggle_nav_buttons():
+        """
+        Enables or disables the navigation buttons based on whether a product is selected.
+        This runs every time 'selected_product_ids' changes.
+        """
+        ids = selected_product_ids.get()
+        is_selected = bool(ids and len(ids) > 0)
+        
+        # Enable/Disable the navigation buttons
+        ui.update_action_button(
+            "nav_similarity", 
+            disabled=not is_selected
+        )
+        ui.update_action_button(
+            "nav_review", 
+            disabled=not is_selected
+        )
+        ui.update_action_button(
+            "nav_editor", 
+            disabled=not is_selected
+        )
+        
+        # Additionally, if a product is deselected, reset the editing product ID
+        if not is_selected:
+             editing_product_id.set(None)
+             expanded_comparison_id.set(None)
+
+    @reactive.Effect
     @reactive.event(input.nav_data)
     def _nav_to_data():
         current_panel.set("data")
@@ -122,15 +150,16 @@ def create_server(input, output, session):
         count = len(marked)
         if count > 0:
             return ui.div(
-                ui.p(f"📌 {count} product(s) marked",
+                ui.hr(), 
+                ui.p(f"📌 {count - 1} product(s) marked",
                      class_="text-success fw-bold small"),
                 ui.input_action_button(
                     "quick_go_review",
-                    "View Marked",
+                    "Review and validate",
                     class_="btn btn-sm btn-outline-success w-100"
                 )
             )
-        return ui.p("No products marked", class_="text-muted small")
+        return ui.p("", class_="text-muted small")
 
     @reactive.Effect
     @reactive.event(input.quick_go_review)
@@ -297,51 +326,6 @@ def create_server(input, output, session):
 
             # Build the UI
             return ui.div(
-                # Original Product Card
-                ui.card(
-                    ui.div(
-                        ui.h4(
-                            f"Original Product: {product_data.get('name_search', 'N/A')} (ID: {pid})"),
-                        ui.span("INACTIVE" if product_data.get('active', 0) == 0 else "ACTIVE",
-                                class_="badge bg-secondary ms-2" if product_data.get('active', 0) == 0 else "badge bg-success ms-2"),
-                        class_="d-flex align-items-center"
-                    ),
-                    ui.tags.ul(
-                        ui.tags.li(
-                            f"Brand: {product_data.get('brands_search', 'N/A')}"),
-                        ui.tags.li(
-                            f"Barcode: {product_data.get('barcode', 'N/A')}"),
-                        ui.tags.li(
-                            f"Energy: {product_data.get('energy', 'N/A')} | Protein: {product_data.get('protein', 'N/A')}g | Fat: {product_data.get('fat', 'N/A')}g"),
-                    ),
-                    ui.hr(),
-                    ui.input_action_button(
-                        "go_to_review_btn",
-                        "Go to Review & Validation",
-                        class_="btn btn-success"
-                    ),
-                    class_="mb-4 p-3"
-                ),
-
-                # Filters - improved layout
-                ui.card(
-                    ui.h5("Similar Products"),
-                    ui.div(
-                        ui.div(
-                            ui.input_text("similarity_search", "Filter:",
-                                          placeholder="Search by name or brand..."),
-                            class_="flex-grow-1 me-3"
-                        ),
-                        ui.div(
-                            ui.input_numeric(
-                                "similarity_score_filter", "Min Score:", value=0.0, min=0.0, max=1.0, step=0.05),
-                            style="width: 150px;"
-                        ),
-                        class_="d-flex align-items-end"
-                    ),
-                    class_="mb-3 p-3"
-                ),
-
                 # Results list (now includes inline comparison panels)
                 ui.output_ui("similarity_results_list"),
             )
@@ -453,22 +437,14 @@ def create_server(input, output, session):
                 ui.div(
                     # First line: Name, Brand, Status Badges
                     ui.div(
-                        ui.strong(f"#{row['Rank']} "),
-                        ui.span(row['Name'], class_="me-2"),
-                        ui.span(f"({row['Brand']})", class_="text-muted me-2"),
+                        ui.strong(f"#{row['Rank']}", class_="me-2"),
+                        ui.strong(row['Name'], class_="me-2"),
+                        ui.strong(f"({row['Brand']})", class_="text-muted me-2"),
                         ui.span("ACTIVE", class_="badge bg-success me-1") if is_active else ui.span(
                             "INACTIVE", class_="badge bg-secondary me-1"),
                         ui.span(
                             "✓ MARKED", class_="badge bg-primary") if is_marked else "",
                         class_="d-flex align-items-center flex-wrap"
-                    ),
-                    # Second line: Barcode, Energy
-                    ui.div(
-                        ui.span(f"Barcode: {row['Barcode']}",
-                                class_="text-muted me-3"),
-                        ui.span(f"Energy: {row['Energy']}",
-                                class_="text-muted"),
-                        class_="small mt-1"
                     ),
                     class_="flex-grow-1"
                 ),
@@ -567,8 +543,7 @@ def create_server(input, output, session):
                 rows.append(ui.div(row_ui, class_="mb-2"))
 
         return ui.div(
-            ui.p(f"Showing {len(df)} similar products",
-                 class_="text-muted small"),
+                ui.p(f"Showing {len(df)} similar products for *{original_dict['name_search']}*",class_="text-muted small"),
             *rows
         )
 
@@ -606,6 +581,9 @@ def create_server(input, output, session):
         marked = marked_for_review.get()
         msg = status_message.get()
 
+        if not marked:
+            return create_no_selection_card()
+
         # Show status message if any
         status_ui = None
         if msg:
@@ -616,17 +594,6 @@ def create_server(input, output, session):
             else:
                 status_ui = create_info_message(msg.get('text', ''))
 
-        if not marked:
-            return ui.div(
-                status_ui if status_ui else "",
-                create_info_message(
-                    "No products marked for review. Go to Similarity Suggestions and mark products to review."),
-                ui.input_action_button(
-                    "go_to_similarity_from_review",
-                    "Go to Similarity Suggestions",
-                    class_="btn btn-primary"
-                )
-            )
 
         # Separate original, active, and inactive products
         original_product = None
@@ -645,7 +612,7 @@ def create_server(input, output, session):
         error_ui = None
         if len(active_products) > 1:
             error_ui = create_error_message(
-                f"You have {len(active_products)} active products marked. "
+                f"You have {len(active_products )} active products marked. "
                 "Please remove all but one active product before linking."
             )
 
@@ -715,7 +682,7 @@ def create_server(input, output, session):
             def _remove(remove_pid=pid):
                 marked = marked_for_review.get().copy()
                 if remove_pid in marked:
-                    del marked[remove_pid]
+                    del marked[remove_pid]  
                     marked_for_review.set(marked)
                     print(f"Removed product {remove_pid} from review")
 

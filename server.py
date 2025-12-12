@@ -148,7 +148,7 @@ def create_server(input, output, session):
     def marked_products_indicator():
         marked = marked_for_review.get()
         count = len(marked)
-        if count > 0:
+        if count > 1:
             return ui.div(
                 ui.hr(), 
                 ui.p(f"📌 {count - 1} product(s) marked",
@@ -196,7 +196,7 @@ def create_server(input, output, session):
         return render.DataTable(
             df,
             selection_mode="none",
-            height="300px",
+            height="70vh",
             width="100%"
         )
 
@@ -214,7 +214,7 @@ def create_server(input, output, session):
         return render.DataTable(
             df,
             selection_mode="row",
-            height="300px",
+            height="70vh",
             width="100%"
         )
 
@@ -543,7 +543,7 @@ def create_server(input, output, session):
                 rows.append(ui.div(row_ui, class_="mb-2"))
 
         return ui.div(
-                ui.p(f"Showing {len(df)} similar products for *{original_dict['name_search']}*",class_="text-muted small"),
+                ui.p(f'Showing similar products for "{original_dict["name_search"]}"', class_="text-muted small"),
             *rows
         )
 

@@ -221,7 +221,7 @@ def create_data_panel_content():
             ),
             
             id="data_accordion",
-            multiple=True,  # Allows the user to have both open at the same time if they want
+            multiple=False,  # Allows the user to have both open at the same time if they want
             open=["panel_inactive"]  # Only the inactive panel is in this list, so it starts open
         )
     )

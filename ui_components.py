@@ -9,18 +9,14 @@ def create_app_ui():
     """Create the main application UI with side navigation"""
     return ui.page_sidebar(
         ui.sidebar(
-            ui.h4("Navigation"),
             ui.input_action_button(
-                "nav_data", "📋 Data & New Entries", class_="btn btn-primary w-100 mb-2"),
+                "nav_data", "Data & New Entries", class_="btn btn-primary w-100 mb-1"),
             ui.input_action_button(
-                "nav_similarity", "🔍 Similarity Suggestions", class_="btn btn-primary w-100 mb-2"),
+                "nav_similarity", "Similarity Suggestions", class_="btn btn-primary w-100 mb-1"),
             ui.input_action_button(
-                "nav_review", "✓ Review & Validation", class_="btn btn-primary w-100 mb-2"),
+                "nav_review", "Review & Validation", class_="btn btn-primary w-100 mb-1"),
             ui.input_action_button(
-                "nav_editor", "✏️ Product Editor", class_="btn btn-secondary w-100 mb-2"),
-            ui.hr(),
-            ui.input_action_button(
-                "nav_debug", "🔧 Debug DB", class_="btn btn-outline-warning w-100 mb-2"),
+                "nav_editor", "Product Editor", class_="btn btn-secondary w-100 mb-1"),
             ui.hr(),
             ui.output_ui("marked_products_indicator"),
             width="250px",
@@ -34,6 +30,11 @@ def create_app_ui():
                 width: 100% !important;
             }
             
+            /* HIDE DATA GRID SUMMARY TEXT */
+            .shiny-data-grid-summary {
+                display: none !important;
+            }
+                      
             /* Truncate all cells with ellipsis */
             .shiny-data-grid td,
             .shiny-data-grid th {
@@ -194,37 +195,45 @@ def create_app_ui():
                 margin-bottom: 5px;
             }
         """),
-        title="Food Product Similarity Dashboard",
     )
 
 
 def create_data_panel_content():
     """Create the Data & New Entries panel content"""
     return ui.div(
-        ui.h2("📋 Data & New Entries"),
+        ui.h2("Data & New Entries"),
         ui.hr(),
 
-        # Active Products Section
-        ui.h4("Active Products"),
-        ui.input_text("search_active", "",
-                      placeholder="Search by name or brands..."),
-        ui.output_data_frame("active_products_table"),
+        ui.accordion(
+            # Panel 1: Inactive Products (Open by default)
+            ui.accordion_panel(
+                "Inactive Products",
+                ui.input_text("search_inactive", "",
+                              placeholder="Search by name or brand"),
+                ui.output_data_frame("inactive_products_table"),
+                value="panel_inactive"  # Identifier for this panel
+            ),
 
-        ui.br(),
-        ui.br(),
-
-        # Inactive Products Section
-        ui.h4("Inactive Products (Click to find similar)"),
-        ui.input_text("search_inactive", "",
-                      placeholder="Search by name or brands..."),
-        ui.output_data_frame("inactive_products_table"),
+            # Panel 2: Active Products (Closed by default)
+            ui.accordion_panel(
+                "Active Products",
+                ui.input_text("search_active", "",
+                              placeholder="Search by name or brand"),
+                ui.output_data_frame("active_products_table"),
+                value="panel_active"    # Identifier for this panel
+            ),
+            
+            id="data_accordion",
+            multiple=True,  # Allows the user to have both open at the same time if they want
+            open=["panel_inactive"]  # Only the inactive panel is in this list, so it starts open
+        )
     )
 
 
 def create_similarity_panel_content():
     """Create the Similarity Suggestions panel content"""
     return ui.div(
-        ui.h2("🔍 Similarity Suggestions"),
+        ui.h2("Similarity Suggestions"),
         ui.hr(),
         ui.output_ui("similarity_section"),
     )

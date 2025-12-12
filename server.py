@@ -317,7 +317,7 @@ def create_server(input, output, session):
                     ui.hr(),
                     ui.input_action_button(
                         "go_to_review_btn",
-                        "📋 Go to Review & Validation",
+                        "Go to Review & Validation",
                         class_="btn btn-success"
                     ),
                     class_="mb-4 p-3"
@@ -325,7 +325,7 @@ def create_server(input, output, session):
 
                 # Filters - improved layout
                 ui.card(
-                    ui.h5("🔍 Similar Products"),
+                    ui.h5("Similar Products"),
                     ui.div(
                         ui.div(
                             ui.input_text("similarity_search", "Filter:",
@@ -382,6 +382,7 @@ def create_server(input, output, session):
         except:
             pass
         try:
+            # We assume input.similarity_score_filter is between 0.0 and 1.0
             min_score = input.similarity_score_filter() or 0.0
         except:
             pass
@@ -394,6 +395,7 @@ def create_server(input, output, session):
             df = df[mask]
 
         if min_score > 0:
+            # Ensure the score is treated as a numeric value for filtering
             df['Score_num'] = df['Score'].astype(float)
             df = df[df['Score_num'] >= min_score]
 
@@ -416,6 +418,10 @@ def create_server(input, output, session):
             is_expanded = expanded_id == similar_id
             is_marked = similar_id in marked
 
+            # Calculate and format the score as a percentage (rounded to 2 digits)
+            score_float = float(row['Score'])
+            formatted_score = f"{round(score_float * 100, 2)}%"
+
             # Create handler for this row's compare button
             btn_id = f"compare_btn_{similar_id}"
             if btn_id not in created_handlers:
@@ -431,15 +437,21 @@ def create_server(input, output, session):
                         expanded_comparison_id.set(sid)
 
             # Row styling
-            row_class = "p-3 border rounded"
+            row_class = "p-3 border rounded clickable-row d-flex justify-content-between align-items-center"
             if is_expanded:
                 row_class += " border-primary border-2 bg-light"
             elif is_marked:
                 row_class += " border-success"
-
+            
+            # Use an invisible action button as a trigger when the entire row is clicked
+            # The click handling logic should be implemented outside of this render function,
+            # but for a cleaner look, the compare button can be embedded directly.
+            
             # Build the row
             row_ui = ui.div(
+                # LEFT SIDE: Product Info and Details
                 ui.div(
+                    # First line: Name, Brand, Status Badges
                     ui.div(
                         ui.strong(f"#{row['Rank']} "),
                         ui.span(row['Name'], class_="me-2"),
@@ -450,8 +462,8 @@ def create_server(input, output, session):
                             "✓ MARKED", class_="badge bg-primary") if is_marked else "",
                         class_="d-flex align-items-center flex-wrap"
                     ),
+                    # Second line: Barcode, Energy
                     ui.div(
-                        ui.span(f"Score: {row['Score']}", class_="me-3"),
                         ui.span(f"Barcode: {row['Barcode']}",
                                 class_="text-muted me-3"),
                         ui.span(f"Energy: {row['Energy']}",
@@ -460,16 +472,26 @@ def create_server(input, output, session):
                     ),
                     class_="flex-grow-1"
                 ),
+                
+                # RIGHT SIDE: Score and Compare Button
                 ui.div(
-                    ui.input_action_button(
-                        btn_id,
-                        "▼ Compare" if not is_expanded else "▲ Close",
-                        class_="btn btn-sm btn-outline-primary"
+                    # Score (now prominent and on the right)
+                    ui.div(
+                        ui.strong(formatted_score),
+                        class_="fs-4 text-primary text-end mb-1"
                     ),
-                    class_="ms-3"
+                    # Compare Button
+                    ui.div(
+                        ui.input_action_button(
+                            btn_id,
+                            "▲ Close" if is_expanded else "▼ Compare",
+                            class_="btn btn-sm btn-outline-primary w-100"
+                        ),
+                        class_="mt-1"
+                    ),
+                    style="width: 100px; text-align: center; margin-left: 15px;"
                 ),
-                class_=row_class,
-                style="display: flex; align-items: center;"
+                class_=row_class # 'd-flex justify-content-between align-items-center' applied here
             )
 
             # If this row is expanded, add the comparison panel right below it

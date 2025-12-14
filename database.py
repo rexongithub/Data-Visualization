@@ -123,10 +123,10 @@ class DatabaseManager:
                 col_str = "*"
 
             # Build WHERE clause - exclude deleted products and products linked to others
-            # Empty CSV values can be NULL or empty string depending on how pandas reads them
+            # Use LENGTH check to be more robust against different NULL/empty representations
             conditions = [
-                "(deleted IS NULL OR deleted = '')",
-                "(linked_items IS NULL OR linked_items = '')"
+                "(deleted IS NULL OR COALESCE(CAST(deleted AS VARCHAR), '') = '')",
+                "(linked_items IS NULL OR COALESCE(CAST(linked_items AS VARCHAR), '') = '')"
             ]
 
             if active_filter == "1":
@@ -143,7 +143,13 @@ class DatabaseManager:
             where_clause = " AND ".join(conditions) if conditions else "1=1"
             query = f"SELECT {col_str} FROM products WHERE {where_clause}"
 
-            return self.con.execute(query).df().reset_index(drop=True)
+            result = self.con.execute(query).df().reset_index(drop=True)
+
+            # Debug: Log count of filtered results
+            print(
+                f"DEBUG get_filtered_products: active_filter={active_filter}, returned {len(result)} rows")
+
+            return result
         except Exception as e:
             print(f"Error filtering data: {str(e)}")
             import traceback

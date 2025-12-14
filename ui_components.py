@@ -145,6 +145,15 @@ def create_app_ui():
                 background-color: #e9ecef !important;
             }
             
+            /* Make inactive products table rows show pointer cursor */
+            #inactive-products-container .shiny-data-grid tbody tr {
+                cursor: pointer;
+            }
+            
+            #inactive-products-container .shiny-data-grid tbody tr:hover {
+                background-color: #e9ecef !important;
+            }
+            
             /* Badge styling */
             .badge-active {
                 background-color: #28a745;
@@ -207,7 +216,12 @@ def create_data_panel_content():
                 "Inactive Products",
                 ui.input_text("search_inactive", "",
                               placeholder="Search by name or brand"),
-                ui.output_data_frame("inactive_products_table"),
+                ui.p("Click on a row to find similar products",
+                     class_="text-muted small mb-2"),
+                ui.div(
+                    ui.output_data_frame("inactive_products_table"),
+                    id="inactive-products-container"
+                ),
                 value="panel_inactive"  # Identifier for this panel
             ),
 
@@ -219,10 +233,11 @@ def create_data_panel_content():
                 ui.output_data_frame("active_products_table"),
                 value="panel_active"    # Identifier for this panel
             ),
-            
+
             id="data_accordion",
             multiple=False,  # Allows the user to have both open at the same time if they want
-            open=["panel_inactive"]  # Only the inactive panel is in this list, so it starts open
+            # Only the inactive panel is in this list, so it starts open
+            open=["panel_inactive"]
         )
     )
 
@@ -537,6 +552,11 @@ def create_editor_form(product_data, editable_fields):
                 "save_product_changes",
                 "💾 Save Changes & Activate",
                 class_="btn btn-success btn-lg me-2"
+            ),
+            ui.input_action_button(
+                "cancel_editor",
+                "Cancel",
+                class_="btn btn-outline-secondary btn-lg"
             ),
         ),
         class_="p-4"

@@ -3,6 +3,7 @@ Server logic for the Food Product Similarity Dashboard
 """
 from shiny import render, reactive, ui
 import pandas as pd
+import time
 from database import DatabaseManager
 from api_client import SimilarityAPIClient
 from ui_components import (
@@ -59,6 +60,13 @@ def create_server(input, output, session):
     # Trigger to force table refresh after DB changes
     table_refresh_trigger = reactive.Value(0)
 
+    # Timestamp of last save operation (for cooldown - not reactive to avoid dependency issues)
+    # Use list to allow modification in nested functions
+    last_save_timestamp = [0]
+
+    # Pending similarity computation (for async loading)
+    pending_similarity_product = reactive.Value(None)
+
     # Track created handlers to avoid duplicates
     created_handlers = set()
 
@@ -78,25 +86,25 @@ def create_server(input, output, session):
         """
         ids = selected_product_ids.get()
         is_selected = bool(ids and len(ids) > 0)
-        
+
         # Enable/Disable the navigation buttons
         ui.update_action_button(
-            "nav_similarity", 
+            "nav_similarity",
             disabled=not is_selected
         )
         ui.update_action_button(
-            "nav_review", 
+            "nav_review",
             disabled=not is_selected
         )
         ui.update_action_button(
-            "nav_editor", 
+            "nav_editor",
             disabled=not is_selected
         )
-        
+
         # Additionally, if a product is deselected, reset the editing product ID
         if not is_selected:
-             editing_product_id.set(None)
-             expanded_comparison_id.set(None)
+            editing_product_id.set(None)
+            expanded_comparison_id.set(None)
 
     @reactive.Effect
     @reactive.event(input.nav_data)
@@ -119,6 +127,10 @@ def create_server(input, output, session):
     @reactive.Effect
     @reactive.event(input.nav_editor)
     def _nav_to_editor():
+        # Sync editing_product_id with the currently selected product
+        ids = selected_product_ids.get()
+        if ids:
+            editing_product_id.set(ids[0])
         current_panel.set("editor")
         status_message.set(None)
 
@@ -150,7 +162,7 @@ def create_server(input, output, session):
         count = len(marked)
         if count > 1:
             return ui.div(
-                ui.hr(), 
+                ui.hr(),
                 ui.p(f"📌 {count - 1} product(s) marked",
                      class_="text-success fw-bold small"),
                 ui.input_action_button(
@@ -208,9 +220,13 @@ def create_server(input, output, session):
     @render.data_frame
     def inactive_products_table():
         # Depend on refresh trigger to update after DB changes
-        _ = table_refresh_trigger.get()
+        trigger_val = table_refresh_trigger.get()
+        print(
+            f"DEBUG inactive_products_table: rendering with trigger={trigger_val}")
         search = input.search_inactive() if hasattr(input, 'search_inactive') else ""
         df = get_filtered_data("0", search)
+        print(
+            f"DEBUG inactive_products_table: got {len(df)} inactive products")
         return render.DataTable(
             df,
             selection_mode="row",
@@ -229,11 +245,26 @@ def create_server(input, output, session):
             if current_panel.get() != "data":
                 return
 
+            # Check if we're within the cooldown period after a save (1 second)
+            # This prevents auto-navigation when returning from editor
+            if time.time() - last_save_timestamp[0] < 1.0:
+                print(f"Skipping auto-navigation (cooldown active)")
+                return
+
             sel = inactive_products_table.cell_selection()
             if sel and sel["rows"]:
                 search = input.search_inactive() if hasattr(input, 'search_inactive') else ""
                 df = get_filtered_data("0", search)
+
+                if df.empty:
+                    return
+
                 row_idx = list(sel["rows"])[0]
+
+                # Make sure row index is valid
+                if row_idx >= len(df):
+                    return
+
                 product_id = int(df.iloc[row_idx]["id"])
 
                 current_ids = selected_product_ids.get()
@@ -243,16 +274,19 @@ def create_server(input, output, session):
                 selected_product_ids.set([product_id])
                 print(f"Selected product ID: {product_id}")
 
-                # Reset comparison panel
+                # Reset comparison panel and marked products
                 expanded_comparison_id.set(None)
+                marked_for_review.set({})
 
-                # Auto-navigate to similarity tab
+                # Navigate immediately to similarity tab (show loading)
                 current_panel.set("similarity")
 
-                # Auto-run similarity computation
-                compute_similarity(product_id)
+                # Set pending similarity computation - will be picked up by similarity_section
+                pending_similarity_product.set(product_id)
         except Exception as e:
             print(f"Error in inactive selection tracking: {e}")
+            import traceback
+            traceback.print_exc()
 
     # ----------------------
     # Compute Similarity
@@ -266,6 +300,16 @@ def create_server(input, output, session):
         store = similarity_results.get().copy()
         store[product_id] = result
         similarity_results.set(store)
+
+    @reactive.Effect
+    def _process_pending_similarity():
+        """Process pending similarity computation after navigation"""
+        pid = pending_similarity_product.get()
+        if pid is not None:
+            # Clear the pending flag
+            pending_similarity_product.set(None)
+            # Compute similarity (results will update similarity_section)
+            compute_similarity(pid)
 
     # ----------------------
     # Similarity Section UI
@@ -348,7 +392,15 @@ def create_server(input, output, session):
         results = similarity_results.get()
 
         if pid not in results:
-            return ui.card("Computing similarity...", class_="p-3")
+            return ui.div(
+                ui.div(
+                    ui.tags.div(
+                        class_="spinner-border text-primary me-2", role="status"),
+                    ui.span("Computing similarity... This may take a moment."),
+                    class_="d-flex align-items-center"
+                ),
+                class_="p-4"
+            )
 
         df = results[pid].copy()
 
@@ -426,11 +478,11 @@ def create_server(input, output, session):
                 row_class += " border-primary border-2 bg-light"
             elif is_marked:
                 row_class += " border-success"
-            
+
             # Use an invisible action button as a trigger when the entire row is clicked
             # The click handling logic should be implemented outside of this render function,
             # but for a cleaner look, the compare button can be embedded directly.
-            
+
             # Build the row
             row_ui = ui.div(
                 # LEFT SIDE: Product Info and Details
@@ -439,7 +491,8 @@ def create_server(input, output, session):
                     ui.div(
                         ui.strong(f"#{row['Rank']}", class_="me-2"),
                         ui.strong(row['Name'], class_="me-2"),
-                        ui.strong(f"({row['Brand']})", class_="text-muted me-2"),
+                        ui.strong(f"({row['Brand']})",
+                                  class_="text-muted me-2"),
                         ui.span("ACTIVE", class_="badge bg-success me-1") if is_active else ui.span(
                             "INACTIVE", class_="badge bg-secondary me-1"),
                         ui.span(
@@ -448,7 +501,7 @@ def create_server(input, output, session):
                     ),
                     class_="flex-grow-1"
                 ),
-                
+
                 # RIGHT SIDE: Score and Compare Button
                 ui.div(
                     # Score (now prominent and on the right)
@@ -467,7 +520,7 @@ def create_server(input, output, session):
                     ),
                     style="width: 100px; text-align: center; margin-left: 15px;"
                 ),
-                class_=row_class # 'd-flex justify-content-between align-items-center' applied here
+                class_=row_class  # 'd-flex justify-content-between align-items-center' applied here
             )
 
             # If this row is expanded, add the comparison panel right below it
@@ -543,7 +596,8 @@ def create_server(input, output, session):
                 rows.append(ui.div(row_ui, class_="mb-2"))
 
         return ui.div(
-                ui.p(f'Showing similar products for "{original_dict["name_search"]}"', class_="text-muted small"),
+            ui.p(
+                f'Showing similar products for "{original_dict["name_search"]}"', class_="text-muted small"),
             *rows
         )
 
@@ -594,7 +648,6 @@ def create_server(input, output, session):
             else:
                 status_ui = create_info_message(msg.get('text', ''))
 
-
         # Separate original, active, and inactive products
         original_product = None
         active_products = []
@@ -612,7 +665,7 @@ def create_server(input, output, session):
         error_ui = None
         if len(active_products) > 1:
             error_ui = create_error_message(
-                f"You have {len(active_products )} active products marked. "
+                f"You have {len(active_products)} active products marked. "
                 "Please remove all but one active product before linking."
             )
 
@@ -682,7 +735,7 @@ def create_server(input, output, session):
             def _remove(remove_pid=pid):
                 marked = marked_for_review.get().copy()
                 if remove_pid in marked:
-                    del marked[remove_pid]  
+                    del marked[remove_pid]
                     marked_for_review.set(marked)
                     print(f"Removed product {remove_pid} from review")
 
@@ -889,8 +942,14 @@ def create_server(input, output, session):
     @reactive.event(input.cancel_editor)
     def _cancel_editor():
         editing_product_id.set(None)
+        selected_product_ids.set([])
+        marked_for_review.set({})
         status_message.set(None)
+        # Set timestamp to suppress auto-navigation for 1 second
+        last_save_timestamp[0] = time.time()
+        # Navigate to data tab FIRST, then refresh tables
         current_panel.set("data")
+        table_refresh_trigger.set(table_refresh_trigger.get() + 1)
 
     # ----------------------
     # Save Product Changes Handler
@@ -922,6 +981,24 @@ def create_server(input, output, session):
             except Exception as e:
                 print(f"Error getting value for {field}: {e}")
 
+        # Check for marked products that need to be linked/deleted
+        marked = marked_for_review.get()
+        inactive_ids_to_link = []
+        for pid, info in marked.items():
+            # Find non-original inactive products that should be linked to this one
+            if not info.get('is_original') and not info.get('is_active') and pid != edit_id:
+                inactive_ids_to_link.append(pid)
+
+        # If there are products to link, do it before activating
+        if inactive_ids_to_link:
+            link_success, link_message = db.link_products(
+                edit_id, inactive_ids_to_link)
+            if not link_success:
+                status_message.set(
+                    {'type': 'error', 'text': f'Failed to link products: {link_message}'})
+                return
+            print(f"Linked {len(inactive_ids_to_link)} products to {edit_id}")
+
         # Activate the product
         success, message = db.activate_product(edit_id, updates)
 
@@ -930,12 +1007,17 @@ def create_server(input, output, session):
                 'type': 'success',
                 'text': f'Product {edit_id} has been updated and activated successfully!'
             })
-            # Reset state and refresh tables
+            # Reset state
             editing_product_id.set(None)
             selected_product_ids.set([])
-            table_refresh_trigger.set(table_refresh_trigger.get() + 1)
-            # Go back to data tab
+            marked_for_review.set({})
+
+            # Set timestamp to suppress auto-navigation for 1 second
+            last_save_timestamp[0] = time.time()
+
+            # Navigate to data tab FIRST, then refresh tables (so table is visible when trigger changes)
             current_panel.set("data")
+            table_refresh_trigger.set(table_refresh_trigger.get() + 1)
         else:
             status_message.set({'type': 'error', 'text': message})
 

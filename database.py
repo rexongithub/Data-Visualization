@@ -50,10 +50,15 @@ class DatabaseManager:
                     "ALTER TABLE products ADD COLUMN linked_items VARCHAR")
                 print("Added 'linked_items' column as VARCHAR")
 
+                # Ensure active column is INTEGER (CSV might load it as float or string)
+                self.con.execute(
+                    "UPDATE products SET active = CAST(active AS INTEGER)")
+                print("Ensured 'active' column is INTEGER type")
+
                 # Verify column types
                 schema = self.con.execute("DESCRIBE products").fetchall()
                 for col in schema:
-                    if col[0] in ['deleted', 'linked_items']:
+                    if col[0] in ['deleted', 'linked_items', 'active']:
                         print(f"  Column '{col[0]}' type: {col[1]}")
 
                 result = self.con.execute(
@@ -123,16 +128,16 @@ class DatabaseManager:
                 col_str = "*"
 
             # Build WHERE clause - exclude deleted products and products linked to others
-            # Use LENGTH check to be more robust against different NULL/empty representations
+            # Empty CSV values can be NULL or empty string depending on how pandas reads them
             conditions = [
-                "(deleted IS NULL OR COALESCE(CAST(deleted AS VARCHAR), '') = '')",
-                "(linked_items IS NULL OR COALESCE(CAST(linked_items AS VARCHAR), '') = '')"
+                "(deleted IS NULL OR deleted = '')",
+                "(linked_items IS NULL OR linked_items = '')"
             ]
 
             if active_filter == "1":
-                conditions.append("active = 1")
+                conditions.append("CAST(active AS INTEGER) = 1")
             elif active_filter == "0":
-                conditions.append("active = 0")
+                conditions.append("CAST(active AS INTEGER) = 0")
 
             if search_term:
                 conditions.append(
@@ -145,7 +150,7 @@ class DatabaseManager:
 
             result = self.con.execute(query).df().reset_index(drop=True)
 
-            # Debug: Log count of filtered results
+            # Debug: Print query results for troubleshooting
             print(
                 f"DEBUG get_filtered_products: active_filter={active_filter}, returned {len(result)} rows")
 
@@ -248,7 +253,15 @@ class DatabaseManager:
             query = f"UPDATE products SET {set_clause} WHERE id = ?"
             self.con.execute(query, values)
 
+            # Verify the update actually worked
+            verify = self.con.execute(
+                "SELECT id, active FROM products WHERE id = ?",
+                [product_id]
+            ).fetchone()
             print(f"Updated product {product_id}: {updates}")
+            print(
+                f"  Verification - ID: {verify[0]}, Active: {verify[1]} (type: {type(verify[1]).__name__})")
+
             return True
         except Exception as e:
             print(f"Error updating product {product_id}: {str(e)}")
